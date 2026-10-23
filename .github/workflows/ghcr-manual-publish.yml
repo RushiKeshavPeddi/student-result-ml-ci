@@ -1,0 +1,83 @@
+name: Practical 8 - Publish Tested Image to GHCR
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: student-result-prediction
+
+jobs:
+  build-test-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Train model
+        run: python train_model.py
+
+      - name: Check ML quality gate
+        run: python quality_gate.py
+
+      - name: Run ML and API tests
+        run: python -m unittest discover -v
+
+      - name: Build tested Docker image
+        run: docker build -t student-result-prediction:ci .
+
+      - name: Start test container
+        run: docker run -d --name student-result-ghcr-check -p 8000:8000 student-result-prediction:ci
+
+      - name: Test health endpoint
+        run: |
+          for attempt in {1..20}; do
+            if curl --fail --silent http://localhost:8000/health; then
+              echo "Health check passed."
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs student-result-ghcr-check
+          exit 1
+
+      - name: Test prediction endpoint
+        run: |
+          response=$(curl --fail --silent --show-error -X POST http://localhost:8000/predict             -H "Content-Type: application/json"             --data @test_payload.json)
+          echo "Prediction response: $response"
+          echo "$response" | grep -q '"prediction":"PASS"'
+
+      - name: Clean up test container
+        if: always()
+        run: docker rm -f student-result-ghcr-check || true
+
+      - name: Create lowercase GHCR image name
+        run: |
+          IMAGE_ID="$REGISTRY/${{ github.repository_owner }}/$IMAGE_NAME"
+          IMAGE_ID=$(echo "$IMAGE_ID" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_ID=$IMAGE_ID" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+      - name: Tag tested image
+        run: |
+          docker tag student-result-prediction:ci "$IMAGE_ID:v1"
+          docker tag student-result-prediction:ci "$IMAGE_ID:latest"
+
+      - name: Push versioned and latest tags
+        run: |
+          docker push "$IMAGE_ID:v1"
+          docker push "$IMAGE_ID:latest"

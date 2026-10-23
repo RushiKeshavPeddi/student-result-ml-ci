@@ -1,20 +1,16 @@
-name: Student Result ML CI
-# Final validated Practical-3 and Practical-4 workflow
-
+name: Student Result ML CI-CD
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  train-and-test:
+  train-test-package:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -28,7 +24,7 @@ jobs:
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
 
-      - name: Install ML dependencies
+      - name: Install ML and API dependencies
         run: pip install -r requirements.txt
 
       - name: Train student result model
@@ -37,8 +33,57 @@ jobs:
       - name: Check ML quality gate
         run: python quality_gate.py
 
-      - name: Run automated ML tests
+      - name: Run automated ML and API tests
         run: python -m unittest discover -v
+
+      - name: Build Docker image
+        run: docker build -t student-result-ml:${{ github.sha }} .
+
+      - name: Start Docker test container
+        run: |
+          docker run -d --name student-result-ml-container -p 8000:8000 student-result-ml:${{ github.sha }}
+
+      - name: Wait for API health endpoint
+        run: |
+          for attempt in {1..20}; do
+            if curl --fail --silent http://localhost:8000/health; then
+              echo "Application health check passed."
+              exit 0
+            fi
+            echo "Waiting for API (attempt $attempt)..."
+            sleep 2
+          done
+          echo "Health check failed."
+          docker logs student-result-ml-container
+          exit 1
+
+      - name: Test prediction endpoint in container
+        run: |
+          response=$(curl --fail --silent --show-error -X POST http://localhost:8000/predict             -H "Content-Type: application/json"             -d '{"attendance":90,"internal_marks":85,"assignment_marks":88,"previous_score":80}')
+          echo "Prediction response: $response"
+          echo "$response" | grep -q '"prediction":"PASS"'
+
+      - name: Show Docker container logs
+        if: always()
+        run: docker logs student-result-ml-container || true
+
+      - name: Stop and remove Docker test container
+        if: always()
+        run: docker rm -f student-result-ml-container || true
+
+      - name: Prepare release candidate
+        run: |
+          mkdir -p release_candidate
+          cp app.py api.py student_result_model.pkl metrics.json requirements.txt Dockerfile .dockerignore release_candidate/
+          printf "Student Result Prediction ML Application\nRun container image on port 8000.\nHealth: GET /health\nDocs: GET /docs\nPrediction: POST /predict\n" > release_candidate/DEPLOYMENT.txt
+
+      - name: Upload release candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: student-result-ml-release
+          path: release_candidate/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload validated ML artifacts
         uses: actions/upload-artifact@v7

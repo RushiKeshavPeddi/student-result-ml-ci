@@ -45,7 +45,7 @@ Example request body is available in `test_payload.json`.
 
 The CI workflow trains the model, checks the 0.85 accuracy threshold, runs tests, builds the Docker image, checks the live container, and uploads the `student-result-ml-release` and `student-result-ml-artifacts` artifacts.
 
-The Practical 8 workflow can be started from **Actions → Practical 8 - Publish Tested Image to GHCR → Run workflow**. The Practical 9 workflow runs on pushes to `main`, tests the image before publication, and publishes the `latest` and commit-specific `sha-<commit>` tags to:
+The Practical 8 workflow can be started from **Actions → Practical 8 - Publish Tested Image to GHCR → Run workflow**. The Practical 9 workflow runs on pushes to `main`, tests the image before publication, and publishes `v1`, `latest`, and commit-specific `sha-<commit>` tags to:
 
 `ghcr.io/rushikeshavpeddi/student-result-prediction`
 

@@ -57,6 +57,14 @@ jobs:
           docker logs student-result-ci
           exit 1
 
+      - name: Test Prometheus metrics endpoint
+        run: |
+          response=$(curl --fail --silent --show-error http://localhost:8000/metrics)
+          echo "$response" | grep -q 'student_api_model_loaded'
+          echo "$response" | grep -q 'student_api_http_requests_total'
+          echo "$response" | grep -q 'student_api_http_request_duration_seconds'
+          echo "Prometheus metrics endpoint passed."
+
       - name: Test prediction endpoint
         run: |
           response=$(curl --fail --silent --show-error -X POST http://localhost:8000/predict \
@@ -64,6 +72,10 @@ jobs:
             --data @test_payload.json)
           echo "Prediction response: $response"
           echo "$response" | grep -q '"prediction":"PASS"'
+
+      - name: Show container logs
+        if: always()
+        run: docker logs student-result-ci || true
 
       - name: Remove test container
         if: always()

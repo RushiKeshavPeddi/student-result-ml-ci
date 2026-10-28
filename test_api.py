@@ -21,6 +21,18 @@ class TestFastAPIPredictionApplication(unittest.TestCase):
         response = self.client.get("/docs")
         self.assertEqual(response.status_code, 200)
 
+    def test_metrics_endpoint_exposes_application_metrics(self):
+        response = self.client.get("/metrics")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("student_api_model_loaded", response.text)
+        self.assertIn("student_api_http_requests_total", response.text)
+        self.assertIn("student_api_http_request_duration_seconds", response.text)
+
+    def test_request_id_is_returned(self):
+        response = self.client.get("/health", headers={"X-Request-ID": "practical-test-123"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("X-Request-ID"), "practical-test-123")
+
     def test_high_performance_prediction(self):
         response = self.client.post("/predict", json={
             "attendance": 90, "internal_marks": 85,
@@ -28,10 +40,12 @@ class TestFastAPIPredictionApplication(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["prediction"], "PASS")
+        self.assertIn("X-Request-ID", response.headers)
 
-    def test_missing_field_validation(self):
+    def test_missing_field_validation_is_tracked(self):
         response = self.client.post("/predict", json={"attendance": 90})
         self.assertEqual(response.status_code, 422)
+        self.assertIn("X-Request-ID", response.headers)
 
 
 if __name__ == "__main__":

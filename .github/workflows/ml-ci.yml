@@ -40,8 +40,7 @@ jobs:
         run: docker build -t student-result-ml:${{ github.sha }} .
 
       - name: Start Docker test container
-        run: |
-          docker run -d --name student-result-ml-container -p 8000:8000 student-result-ml:${{ github.sha }}
+        run: docker run -d --name student-result-ml-container -p 8000:8000 student-result-ml:${{ github.sha }}
 
       - name: Wait for API health endpoint
         run: |
@@ -57,9 +56,19 @@ jobs:
           docker logs student-result-ml-container
           exit 1
 
+      - name: Test Prometheus metrics endpoint in container
+        run: |
+          response=$(curl --fail --silent --show-error http://localhost:8000/metrics)
+          echo "$response" | grep -q 'student_api_model_loaded'
+          echo "$response" | grep -q 'student_api_http_requests_total'
+          echo "$response" | grep -q 'student_api_http_request_duration_seconds'
+          echo "Prometheus metrics endpoint passed."
+
       - name: Test prediction endpoint in container
         run: |
-          response=$(curl --fail --silent --show-error -X POST http://localhost:8000/predict             -H "Content-Type: application/json"             -d '{"attendance":90,"internal_marks":85,"assignment_marks":88,"previous_score":80}')
+          response=$(curl --fail --silent --show-error -X POST http://localhost:8000/predict \
+            -H "Content-Type: application/json" \
+            -d '{"attendance":90,"internal_marks":85,"assignment_marks":88,"previous_score":80}')
           echo "Prediction response: $response"
           echo "$response" | grep -q '"prediction":"PASS"'
 
@@ -75,7 +84,8 @@ jobs:
         run: |
           mkdir -p release_candidate
           cp app.py api.py student_result_model.pkl metrics.json requirements.txt Dockerfile .dockerignore release_candidate/
-          printf "Student Result Prediction ML Application\nRun container image on port 8000.\nHealth: GET /health\nDocs: GET /docs\nPrediction: POST /predict\n" > release_candidate/DEPLOYMENT.txt
+          printf "Student Result Prediction ML Application\\nRun container image on port 8000.\\nHealth: GET /health\\nDocs: GET /docs\\nPrediction: POST /predict\\nMetrics: GET /metrics\\n" > release_candidate/DEPLOYMENT.txt
+          cp -R Practical_12_Monitoring PRACTICAL_11_12_IMPLEMENTATION.md release_candidate/
 
       - name: Upload release candidate
         uses: actions/upload-artifact@v7
